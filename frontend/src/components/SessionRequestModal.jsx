@@ -99,7 +99,11 @@ export default function SessionRequestModal({ match, onClose }) {
                   className="input resize-none h-16 text-sm"
                   placeholder="Hi! I'd love to swap skills with you..." />
               </div>
-              <button type="submit" disabled={sending} className="btn-primary w-full flex items-center justify-center gap-2">
+              <button 
+                type="submit" 
+                disabled={sending || !form.skillOffered || !form.skillWanted} 
+                className="btn-primary w-full flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
                 {sending ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : null}
                 {sending ? 'Sending...' : 'Send Request'}
               </button>

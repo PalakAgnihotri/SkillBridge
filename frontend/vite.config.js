@@ -7,6 +7,11 @@ export default defineConfig({
     global: 'window',
     'process.env': {},
   },
+  resolve: {
+    alias: {
+      util: 'util'
+    }
+  },
   server: {
     port: 5173,
     proxy: {

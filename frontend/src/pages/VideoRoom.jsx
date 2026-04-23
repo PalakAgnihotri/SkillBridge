@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import SimplePeer from 'simple-peer'
+import SimplePeer from 'simple-peer/simplepeer.min.js'
 import { useSocket } from '../context/SocketContext'
 import { useAuth } from '../context/AuthContext'
 
@@ -19,6 +19,7 @@ export default function VideoRoom() {
   const [muted, setMuted]         = useState(false)
   const [camOff, setCamOff]       = useState(false)
   const [waiting, setWaiting]     = useState(true)
+  const [remoteStream, setRemoteStream] = useState(null)
 
   useEffect(() => {
     if (!socket) return
@@ -29,55 +30,83 @@ export default function VideoRoom() {
       { urls: 'stun:stun2.l.google.com:19302' },
     ]
 
-    // 1. Get local stream immediately
+    let localStream = null
+
+    const createPeer = (isInitiator, partnerOffer = null) => {
+      if (peerRef.current || !localStream) return
+
+      const peer = new SimplePeer({
+        initiator: isInitiator,
+        trickle: true,
+        stream: localStream,
+        config: { iceServers }
+      })
+
+      peerRef.current = peer
+
+      peer.on('signal', signal => {
+        if (signal.type === 'offer') {
+          socket.emit('webrtc:offer', { to: roomId, offer: signal })
+        } else if (signal.type === 'answer') {
+          socket.emit('webrtc:answer', { to: roomId, answer: signal })
+        } else if (signal.candidate) {
+          socket.emit('webrtc:ice', { to: roomId, candidate: signal })
+        }
+      })
+
+      peer.on('error', err => console.error('Peer error:', err))
+
+      peer.on('stream', stream => {
+        setRemoteStream(stream)
+        setConnected(true)
+        setWaiting(false)
+      })
+
+      if (partnerOffer) peer.signal(partnerOffer)
+    }
+
+    // 1. Get local stream
     navigator.mediaDevices.getUserMedia({ video: true, audio: true })
       .then(stream => {
+        localStream = stream
         streamRef.current = stream
         if (localRef.current) localRef.current.srcObject = stream
-
-        // 2. Join the room
+        
+        // Join the room after camera is ready
         socket.emit('join:room', roomId)
-
-        const createPeer = (isInitiator, partnerOffer = null) => {
-          if (peerRef.current) return
-
-          const peer = new SimplePeer({
-            initiator: isInitiator,
-            trickle: true,
-            stream,
-            config: { iceServers }
-          })
-
-          peerRef.current = peer
-
-          peer.on('signal', signal => {
-            if (signal.type === 'offer') {
-              socket.emit('webrtc:offer', { to: roomId, offer: signal })
-            } else if (signal.type === 'answer') {
-              socket.emit('webrtc:answer', { to: roomId, answer: signal })
-            } else if (signal.candidate) {
-              socket.emit('webrtc:ice', { to: roomId, candidate: signal })
-            }
-          })
-
-          peer.on('stream', remoteStream => {
-            if (remoteRef.current) remoteRef.current.srcObject = remoteStream
-            setConnected(true)
-            setWaiting(false)
-          })
-
-          if (partnerOffer) peer.signal(partnerOffer)
-        }
-
-        // 3. Listen for room events
-        socket.on('user:joined', () => createPeer(true))
-        socket.on('webrtc:offer', ({ offer }) => createPeer(false, offer))
-        socket.on('webrtc:answer', ({ answer }) => peerRef.current?.signal(answer))
-        socket.on('webrtc:ice', ({ candidate }) => peerRef.current?.signal(candidate))
       })
       .catch(err => console.error("Media error:", err))
 
-    socket.on('webrtc:end', () => endCall())
+    // 2. Listen for room events immediately
+    socket.on('user:joined', () => {
+      console.log('Partner joined the room!')
+      if (localStream) createPeer(true)
+    })
+
+    socket.on('webrtc:offer', ({ offer }) => {
+      console.log('Received offer from partner')
+      const interval = setInterval(() => {
+        if (localStream) {
+          createPeer(false, offer)
+          clearInterval(interval)
+        }
+      }, 100)
+    })
+
+    socket.on('webrtc:answer', ({ answer }) => {
+      console.log('Received answer from partner')
+      peerRef.current?.signal(answer)
+    })
+
+    socket.on('webrtc:ice', ({ candidate }) => {
+      console.log('Received ICE candidate')
+      peerRef.current?.signal(candidate)
+    })
+
+    socket.on('webrtc:end', () => {
+      console.log('Call ended by partner')
+      endCall()
+    })
 
     return () => {
       socket.off('user:joined')
@@ -105,6 +134,19 @@ export default function VideoRoom() {
     setCamOff(c => !c)
   }
 
+  // Ensure video elements play when stream is attached
+  useEffect(() => {
+    if (localRef.current && streamRef.current) {
+      localRef.current.srcObject = streamRef.current
+    }
+  }, [streamRef.current, localRef.current])
+
+  useEffect(() => {
+    if (remoteRef.current && remoteStream) {
+      remoteRef.current.srcObject = remoteStream
+    }
+  }, [remoteStream, remoteRef.current])
+
   return (
     <div className="min-h-screen bg-[#070710] flex flex-col items-center justify-center p-4">
 
@@ -119,22 +161,33 @@ export default function VideoRoom() {
 
         {/* Video grid */}
         <div className="grid grid-cols-2 gap-4 mb-4">
-          <div className="relative bg-[#111118] rounded-2xl overflow-hidden aspect-video">
-            <video ref={remoteRef} autoPlay playsInline className="w-full h-full object-cover" />
+          <div className="relative bg-[#111118] rounded-2xl overflow-hidden aspect-video border border-white/5 shadow-2xl">
+            <video 
+              ref={remoteRef} 
+              autoPlay 
+              playsInline 
+              className="w-full h-full object-cover" 
+            />
             {waiting && (
-              <div className="absolute inset-0 flex items-center justify-center">
+              <div className="absolute inset-0 flex items-center justify-center bg-[#111118]/80 backdrop-blur-sm">
                 <div className="text-center">
                   <div className="w-8 h-8 border-2 border-[#7c6ff7] border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-                  <p className="text-white/40 text-sm">Waiting for peer to join...</p>
+                  <p className="text-white/40 text-sm">Waiting for peer...</p>
                 </div>
               </div>
             )}
-            <div className="absolute bottom-3 left-3 text-xs text-white/50 bg-black/40 px-2 py-1 rounded-lg">Remote</div>
+            <div className="absolute bottom-3 left-3 text-[10px] uppercase tracking-widest text-white/40 bg-black/40 px-2 py-1 rounded-md border border-white/5">Remote</div>
           </div>
 
-          <div className="relative bg-[#111118] rounded-2xl overflow-hidden aspect-video">
-            <video ref={localRef} autoPlay playsInline muted className="w-full h-full object-cover scale-x-[-1]" />
-            <div className="absolute bottom-3 left-3 text-xs text-white/50 bg-black/40 px-2 py-1 rounded-lg">You</div>
+          <div className="relative bg-[#111118] rounded-2xl overflow-hidden aspect-video border border-white/5 shadow-2xl">
+            <video 
+              ref={localRef} 
+              autoPlay 
+              playsInline 
+              muted 
+              className="w-full h-full object-cover scale-x-[-1]" 
+            />
+            <div className="absolute bottom-3 left-3 text-[10px] uppercase tracking-widest text-white/40 bg-black/40 px-2 py-1 rounded-md border border-white/5">You</div>
           </div>
         </div>
 
