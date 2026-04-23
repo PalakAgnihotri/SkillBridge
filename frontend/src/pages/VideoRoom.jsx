@@ -29,59 +29,53 @@ export default function VideoRoom() {
       { urls: 'stun:stun2.l.google.com:19302' },
     ]
 
-    const initCall = (isInitiator, partnerOffer = null) => {
-      navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then(stream => {
+    // 1. Get local stream immediately
+    navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+      .then(stream => {
         streamRef.current = stream
         if (localRef.current) localRef.current.srcObject = stream
 
-        const peer = new SimplePeer({
-          initiator: isInitiator,
-          trickle: true,
-          stream,
-          config: { iceServers }
-        })
+        // 2. Join the room
+        socket.emit('join:room', roomId)
 
-        peerRef.current = peer
+        const createPeer = (isInitiator, partnerOffer = null) => {
+          if (peerRef.current) return
 
-        peer.on('signal', signal => {
-          if (signal.type === 'offer') {
-            socket.emit('webrtc:offer', { to: roomId, offer: signal })
-          } else if (signal.type === 'answer') {
-            socket.emit('webrtc:answer', { to: roomId, answer: signal })
-          } else if (signal.candidate) {
-            socket.emit('webrtc:ice', { to: roomId, candidate: signal })
-          }
-        })
+          const peer = new SimplePeer({
+            initiator: isInitiator,
+            trickle: true,
+            stream,
+            config: { iceServers }
+          })
 
-        peer.on('stream', remoteStream => {
-          if (remoteRef.current) remoteRef.current.srcObject = remoteStream
-          setConnected(true)
-          setWaiting(false)
-        })
+          peerRef.current = peer
 
-        if (partnerOffer) peer.signal(partnerOffer)
+          peer.on('signal', signal => {
+            if (signal.type === 'offer') {
+              socket.emit('webrtc:offer', { to: roomId, offer: signal })
+            } else if (signal.type === 'answer') {
+              socket.emit('webrtc:answer', { to: roomId, answer: signal })
+            } else if (signal.candidate) {
+              socket.emit('webrtc:ice', { to: roomId, candidate: signal })
+            }
+          })
+
+          peer.on('stream', remoteStream => {
+            if (remoteRef.current) remoteRef.current.srcObject = remoteStream
+            setConnected(true)
+            setWaiting(false)
+          })
+
+          if (partnerOffer) peer.signal(partnerOffer)
+        }
+
+        // 3. Listen for room events
+        socket.on('user:joined', () => createPeer(true))
+        socket.on('webrtc:offer', ({ offer }) => createPeer(false, offer))
+        socket.on('webrtc:answer', ({ answer }) => peerRef.current?.signal(answer))
+        socket.on('webrtc:ice', ({ candidate }) => peerRef.current?.signal(candidate))
       })
-    }
-
-    // 1. Join the room
-    socket.emit('join:room', roomId)
-
-    // 2. Room listeners
-    socket.on('user:joined', () => {
-      if (!peerRef.current) initCall(true)
-    })
-
-    socket.on('webrtc:offer', ({ offer }) => {
-      if (!peerRef.current) initCall(false, offer)
-    })
-
-    socket.on('webrtc:answer', ({ answer }) => {
-      peerRef.current?.signal(answer)
-    })
-
-    socket.on('webrtc:ice', ({ candidate }) => {
-      peerRef.current?.signal(candidate)
-    })
+      .catch(err => console.error("Media error:", err))
 
     socket.on('webrtc:end', () => endCall())
 
