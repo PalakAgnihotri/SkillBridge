@@ -7,36 +7,36 @@ export const useSocket = () => useContext(SocketContext)
 
 export function SocketProvider({ children }) {
   const { user } = useAuth()
-  const socketRef = useRef(null)
+  const [socket, setSocket]             = useState(null)
   const [onlineUsers, setOnlineUsers]         = useState([])
   const [incomingSession, setIncomingSession] = useState(null)
 
   useEffect(() => {
     if (!user) return
 
-    socketRef.current = io(import.meta.env.VITE_API_URL || 'http://localhost:5000', {
+    const s = io(import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000', {
       transports: ['websocket'],
     })
 
-    const socket = socketRef.current
-    socket.emit('user:online', user._id)
+    setSocket(s)
+    s.emit('user:online', user._id)
 
-    socket.on('users:online',      (users) => setOnlineUsers(users))
-    socket.on('session:incoming',  (session) => setIncomingSession(session))
+    s.on('users:online',      (users) => setOnlineUsers(users))
+    s.on('session:incoming',  (session) => setIncomingSession(session))
 
     return () => {
-      socket.disconnect()
-      socketRef.current = null
+      s.disconnect()
+      setSocket(null)
     }
   }, [user])
 
-  const emit = (event, data) => socketRef.current?.emit(event, data)
+  const emit = (event, data) => socket?.emit(event, data)
 
   const isOnline = (userId) => onlineUsers.includes(userId)
 
   return (
     <SocketContext.Provider value={{
-      socket: socketRef.current,
+      socket,
       onlineUsers,
       incomingSession,
       setIncomingSession,
