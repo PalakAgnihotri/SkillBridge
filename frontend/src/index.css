@@ -1,0 +1,45 @@
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0a0a0f;
+    color: #f0eff8;
+    font-family: 'DM Sans', sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: #0a0a0f; }
+  ::-webkit-scrollbar-thumb { background: #7c6ff7; border-radius: 2px; }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-gradient-to-r from-[#7c6ff7] to-[#2dd4bf] text-white font-medium px-6 py-2.5 rounded-full transition-all hover:opacity-90 hover:-translate-y-0.5 active:scale-95;
+  }
+  .btn-ghost {
+    @apply border border-white/10 text-white/80 font-medium px-6 py-2.5 rounded-full transition-all hover:border-[#7c6ff7] hover:text-[#a78bfa];
+  }
+  .card {
+    @apply bg-[#1a1a24] border border-white/10 rounded-2xl;
+  }
+  .input {
+    @apply w-full bg-[#111118] border border-white/10 rounded-xl px-4 py-3 text-white placeholder-white/30 focus:outline-none focus:border-[#7c6ff7] transition-colors text-sm;
+  }
+  .skill-tag {
+    @apply px-3 py-1 rounded-full text-xs font-medium border;
+  }
+  .skill-tag-know {
+    @apply skill-tag bg-[#7c6ff7]/10 text-[#a78bfa] border-[#7c6ff7]/25;
+  }
+  .skill-tag-want {
+    @apply skill-tag bg-[#2dd4bf]/10 text-[#5eead4] border-[#2dd4bf]/25;
+  }
+  .badge-score {
+    @apply text-xs font-semibold px-2 py-1 rounded-md bg-[#2dd4bf]/15 text-[#2dd4bf];
+  }
+}
