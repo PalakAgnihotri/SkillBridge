@@ -24,7 +24,7 @@ export default function SessionRequestModal({ match, onClose }) {
         receiverId:   match._id,
         skillOffered: form.skillOffered,
         skillWanted:  form.skillWanted,
-        scheduledAt:  form.scheduledAt || undefined,
+        scheduledAt:  form.scheduledAt ? new Date(form.scheduledAt).toISOString() : undefined,
         duration:     form.duration,
         notes:        form.notes,
       })

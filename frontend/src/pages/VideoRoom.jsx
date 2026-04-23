@@ -23,59 +23,76 @@ export default function VideoRoom() {
   useEffect(() => {
     if (!socket) return
 
-    navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then(stream => {
-      streamRef.current = stream
-      if (localRef.current) localRef.current.srcObject = stream
+    const iceServers = [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
+    ]
 
-      // Initiator: create offer
-      const peer = new SimplePeer({ initiator: true, trickle: false, stream })
-      peerRef.current = peer
-
-      peer.on('signal', offer => {
-        socket.emit('webrtc:offer', { to: roomId, offer })
-      })
-
-      peer.on('stream', remoteStream => {
-        if (remoteRef.current) remoteRef.current.srcObject = remoteStream
-        setConnected(true); setWaiting(false)
-      })
-
-      // Receive answer from remote peer
-      socket.on('webrtc:answer', ({ answer }) => peer.signal(answer))
-      socket.on('webrtc:ice',    ({ candidate }) => peer.signal(candidate))
-    })
-
-    // If this peer is the receiver
-    socket.on('webrtc:offer', ({ from, offer }) => {
+    const initCall = (isInitiator, partnerOffer = null) => {
       navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then(stream => {
         streamRef.current = stream
         if (localRef.current) localRef.current.srcObject = stream
 
-        const peer = new SimplePeer({ initiator: false, trickle: false, stream })
+        const peer = new SimplePeer({
+          initiator: isInitiator,
+          trickle: true,
+          stream,
+          config: { iceServers }
+        })
+
         peerRef.current = peer
 
-        peer.signal(offer)
-
-        peer.on('signal', answer => {
-          socket.emit('webrtc:answer', { to: from, answer })
+        peer.on('signal', signal => {
+          if (signal.type === 'offer') {
+            socket.emit('webrtc:offer', { to: roomId, offer: signal })
+          } else if (signal.type === 'answer') {
+            socket.emit('webrtc:answer', { to: roomId, answer: signal })
+          } else if (signal.candidate) {
+            socket.emit('webrtc:ice', { to: roomId, candidate: signal })
+          }
         })
 
         peer.on('stream', remoteStream => {
           if (remoteRef.current) remoteRef.current.srcObject = remoteStream
-          setConnected(true); setWaiting(false)
+          setConnected(true)
+          setWaiting(false)
         })
+
+        if (partnerOffer) peer.signal(partnerOffer)
       })
+    }
+
+    // 1. Join the room
+    socket.emit('join:room', roomId)
+
+    // 2. Room listeners
+    socket.on('user:joined', () => {
+      if (!peerRef.current) initCall(true)
+    })
+
+    socket.on('webrtc:offer', ({ offer }) => {
+      if (!peerRef.current) initCall(false, offer)
+    })
+
+    socket.on('webrtc:answer', ({ answer }) => {
+      peerRef.current?.signal(answer)
+    })
+
+    socket.on('webrtc:ice', ({ candidate }) => {
+      peerRef.current?.signal(candidate)
     })
 
     socket.on('webrtc:end', () => endCall())
 
     return () => {
+      socket.off('user:joined')
       socket.off('webrtc:offer')
       socket.off('webrtc:answer')
       socket.off('webrtc:ice')
       socket.off('webrtc:end')
     }
-  }, [socket])
+  }, [socket, roomId])
 
   const endCall = () => {
     streamRef.current?.getTracks().forEach(t => t.stop())
